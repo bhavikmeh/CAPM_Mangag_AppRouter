@@ -1,0 +1,150 @@
+_schema-version: 3.3.0
+ID: mgm_inc
+version: 1.0.0
+description: "A simple CAP project."
+parameters:
+  enable-parallel-deployments: true
+  deploy_mode: html5-repo
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production
+        - mkdir -p resources
+modules:
+  - name: mgm_inc-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      buildpack: nodejs_buildpack
+      readiness-health-check-type: http
+      readiness-health-check-http-endpoint: /health
+    build-parameters:
+      builder: npm
+    provides:
+      - name: srv-api # required by consumers of CAP services (e.g. approuter)
+        properties:
+          srv-url: ${default-url}
+    requires:
+      - name: mgm_inc-db
+      - name: mgm_inc-auth
+      - name: mgm_inc-destination
+
+  - name: mgm_inc-db-deployer
+    type: hdb
+    path: gen/db
+    parameters:
+      buildpack: nodejs_buildpack
+    requires:
+      - name: mgm_inc-db
+
+  - name: mgm_inc-app-deployer
+    type: com.sap.application.content
+    path: .
+    requires:
+      - name: mgm_inc-html5-repo-host
+        parameters:
+          content-target: true
+    build-parameters:
+      build-result: resources/
+      requires:
+        - name: mgm_incmgminc
+          artifacts:
+            - mgminc.zip
+          target-path: resources/
+
+  - name: mgm_incmgminc
+    type: html5
+    path: app/mgminc
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+        - npm ci
+        - npm run build
+      supported-platforms:
+        []
+
+  - name: mgm_inc-destinations
+    type: com.sap.application.content
+    requires:
+      - name: mgm_inc-auth
+        parameters:
+          service-key:
+            name: mgm_inc-auth-key
+      - name: mgm_inc-html5-repo-host
+        parameters:
+          service-key:
+            name: mgm_inc-html5-repo-host-key
+      - name: srv-api
+      - name: mgm_inc-destination
+        parameters:
+          content-target: true
+    build-parameters:
+      no-source: true
+    parameters:
+      content:
+        instance:
+          existing_destinations_policy: update
+          destinations:
+            - Name: mgm_inc-html5-repository
+              ServiceInstanceName: mgm_inc-html5-repo-host
+              ServiceKeyName: mgm_inc-html5-repo-host-key
+              sap.cloud.service: mgm_inc.service
+            - Name: mgm_inc-auth
+              Authentication: OAuth2UserTokenExchange
+              ServiceInstanceName: mgm_inc-auth
+              ServiceKeyName: mgm_inc-auth-key
+              sap.cloud.service: mgm_inc.service
+
+resources:
+  - name: mgm_inc-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+  - name: mgm_inc-html5-repo-host
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-host
+  - name: mgm_inc-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: xsuaa
+      service-plan: application
+      path: ./xs-security.json
+      config:
+        xsappname: mgm_inc-${org}-${space}
+        tenant-mode: dedicated
+  - name: mgm_inc-destination
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: destination
+      service-plan: lite
+      config:
+        HTML5Runtime_enabled: true
+        init_data:
+          instance:
+            existing_destinations_policy: update
+            destinations:
+              - Name: mgm_inc-srv-api
+                URL: ~{srv-api/srv-url}
+                Authentication: NoAuthentication
+                Type: HTTP
+                ProxyType: Internet
+                HTML5.ForwardAuthToken: true
+                HTML5.DynamicDestination: true
+              - Name: ui5
+                URL: https://ui5.sap.com
+                Authentication: NoAuthentication
+                Type: HTTP
+                ProxyType: Internet
+    requires:
+      - name: srv-api
+        group: destinations
+        properties:
+          name: srv-api # must be used in xs-app.json as well
+          url: ~{srv-url}
+          forwardAuthToken: true
