@@ -1,2 +1,4 @@
 
-using from './mgminc/annotations';
+using from './incmgmapp/annotations';
+
+using from './customers/annotations';
