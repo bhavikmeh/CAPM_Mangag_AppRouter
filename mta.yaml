@@ -1,44 +1,20 @@
 _schema-version: 3.3.0
 ID: mgm_inc
 version: 1.0.0
-description: "A simple CAP project."
-parameters:
-  enable-parallel-deployments: true
-  deploy_mode: html5-repo
-build-parameters:
-  before-all:
-    - builder: custom
-      commands:
-        - npm ci
-        - npx cds build --production
-        - mkdir -p resources
 modules:
   - name: mgm_inc-srv
     type: nodejs
     path: gen/srv
     parameters:
       buildpack: nodejs_buildpack
-      readiness-health-check-type: http
       readiness-health-check-http-endpoint: /health
     build-parameters:
       builder: npm
-    provides:
-      - name: srv-api # required by consumers of CAP services (e.g. approuter)
-        properties:
-          srv-url: ${default-url}
-    requires:
-      - name: mgm_inc-db
-      - name: mgm_inc-auth
-      - name: mgm_inc-destination
-
   - name: mgm_inc-db-deployer
     type: hdb
     path: gen/db
     parameters:
       buildpack: nodejs_buildpack
-    requires:
-      - name: mgm_inc-db
-
   - name: mgm_inc-app-deployer
     type: com.sap.application.content
     path: .
@@ -81,12 +57,9 @@ modules:
       - name: mgm_inc-destination
         parameters:
           content-target: true
-    build-parameters:
-      no-source: true
     parameters:
       content:
         instance:
-          existing_destinations_policy: update
           destinations:
             - Name: mgm_inc-html5-repository
               ServiceInstanceName: mgm_inc-html5-repo-host
@@ -99,35 +72,13 @@ modules:
               sap.cloud.service: mgm_inc.service
 
 resources:
-  - name: mgm_inc-db
-    type: com.sap.xs.hdi-container
-    parameters:
-      service: hana
-      service-plan: hdi-shared
-  - name: mgm_inc-html5-repo-host
-    type: org.cloudfoundry.managed-service
-    parameters:
-      service: html5-apps-repo
-      service-plan: app-host
-  - name: mgm_inc-auth
-    type: org.cloudfoundry.managed-service
-    parameters:
-      service: xsuaa
-      service-plan: application
-      path: ./xs-security.json
-      config:
-        xsappname: mgm_inc-${org}-${space}
-        tenant-mode: dedicated
   - name: mgm_inc-destination
     type: org.cloudfoundry.managed-service
     parameters:
-      service: destination
-      service-plan: lite
       config:
         HTML5Runtime_enabled: true
         init_data:
           instance:
-            existing_destinations_policy: update
             destinations:
               - Name: mgm_inc-srv-api
                 URL: ~{srv-api/srv-url}

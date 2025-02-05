@@ -21,7 +21,6 @@
   "cds": {
     "server":{"index": true},
     "requires": {
-      "db": "hana",
       "auth": "xsuaa",
       "html5-repo": true,
       "destinations": true,
